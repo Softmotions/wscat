@@ -1,5 +1,5 @@
 {
-  "name": "wscat",
+  "name": "@softmotions/wscat",
   "version": "2.2.1",
   "description": "WebSocket cat",
   "main": "index.js",
