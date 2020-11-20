@@ -8,6 +8,7 @@
 
 const EventEmitter = require('events');
 const fs = require('fs');
+const HttpsProxyAgent = require('https-proxy-agent');
 const program = require('commander');
 const read = require('read');
 const readline = require('readline');
@@ -29,7 +30,7 @@ class Console extends EventEmitter {
     this.readlineInterface = readline.createInterface(this.stdin, this.stdout);
 
     this.readlineInterface
-      .on('line', data => {
+      .on('line', (data) => {
         this.emit('line', data);
       })
       .on('close', () => {
@@ -60,7 +61,7 @@ class Console extends EventEmitter {
   }
 
   prompt() {
-    this.readlineInterface.prompt();
+    this.readlineInterface.prompt(true);
   }
 
   print(type, msg, color) {
@@ -81,7 +82,7 @@ class Console extends EventEmitter {
 
   clear() {
     if (tty.isatty(1)) {
-      this.stdout.write('\u001b[2K\u001b[3D');
+      this.stdout.write('\r\u001b[2K\u001b[3D');
     }
   }
 
@@ -110,49 +111,53 @@ program
   .version(version)
   .usage('[options] (--listen <port> | --connect <url>)')
   .option('-l, --listen <port>', 'listen on port')
-  .option('-c, --connect <url>', 'connect to a websocket server')
+  .option('-c, --connect <url>', 'connect to a WebSocket server')
   .option('-p, --protocol <version>', 'optional protocol version')
   .option('-o, --origin <origin>', 'optional origin')
   .option('-x, --execute <command>', 'execute command after connecting')
   .option('-w, --wait <seconds>', 'wait given seconds after executing command')
+  .option(
+    '-P, --show-ping-pong',
+    'print a notification when a ping or pong is received'
+  )
   .option('--host <host>', 'optional host')
   .option('-s, --subprotocol <protocol>', 'optional subprotocol', collect, [])
-  .option('-n, --no-check', 'Do not check for unauthorized certificates')
+  .option('-n, --no-check', 'do not check for unauthorized certificates')
   .option(
     '-H, --header <header:value>',
-    'Set an HTTP header. Repeat to set multiple. (--connect only)',
+    'set an HTTP header. Repeat to set multiple (--connect only)',
     collect,
     []
   )
   .option(
     '--auth <username:password>',
-    'Add basic HTTP authentication header. (--connect only)'
+    'add basic HTTP authentication header (--connect only)'
   )
-  .option('--ca <ca>', 'Specify a Certificate Authority (--connect only)')
-  .option('--cert <cert>', 'Specify a Client SSL Certificate (--connect only)')
+  .option('--ca <ca>', 'specify a Certificate Authority (--connect only)')
+  .option('--cert <cert>', 'specify a Client SSL Certificate (--connect only)')
   .option(
     '--key <key>',
-    "Specify a Client SSL Certificate's key (--connect only)"
+    "specify a Client SSL Certificate's key (--connect only)"
   )
   .option(
     '--passphrase [passphrase]',
-    "Specify a Client SSL Certificate Key's passphrase (--connect only). " +
-      "If you don't provide a value, it will be prompted for."
+    "specify a Client SSL Certificate Key's passphrase (--connect only). " +
+      "If you don't provide a value, it will be prompted for"
   )
-  .option('--no-color', 'Run without color')
+  .option('--no-color', 'run without color')
   .option(
     '--slash',
-    'Enable slash commands for control frames ' +
-      '(/ping, /pong, /close [code [, reason]])'
+    'enable slash commands for control frames (/ping, /pong, /close ' +
+      '[code [, reason]])'
   )
   .option(
-    '-q, --quiet',
-    'Stops incoming ping control frame being printed to console.'
+    '--proxy <[protocol://]host[:port]>',
+    'connect via a proxy. Proxy must support CONNECT method'
   )
   .parse(process.argv);
 
 if (program.listen && program.connect) {
-  console.error('\u001b[33merror: use either --listen or --connect\u001b[39m');
+  console.error('\u001b[33merror: Use either --listen or --connect\u001b[39m');
   process.exit(-1);
 }
 
@@ -164,7 +169,7 @@ if (program.listen) {
   const wss = new WebSocket.Server({ port: program.listen }, () => {
     wsConsole.print(
       Console.Types.Control,
-      `listening on port ${program.listen} (press CTRL+C to quit)`,
+      `Listening on port ${program.listen} (press CTRL+C to quit)`,
       Console.Colors.Green
     );
     wsConsole.clear();
@@ -175,14 +180,14 @@ if (program.listen) {
     process.exit(0);
   });
 
-  wsConsole.on('line', data => {
+  wsConsole.on('line', (data) => {
     if (ws) {
       ws.send(data);
       wsConsole.prompt();
     }
   });
 
-  wss.on('connection', newClient => {
+  wss.on('connection', (newClient) => {
     if (ws) return newClient.terminate();
 
     ws = newClient;
@@ -190,14 +195,14 @@ if (program.listen) {
     wsConsole.prompt();
     wsConsole.print(
       Console.Types.Control,
-      'client connected',
+      'Client connected',
       Console.Colors.Green
     );
 
-    ws.on('close', code => {
+    ws.on('close', (code, reason) => {
       wsConsole.print(
         Console.Types.Control,
-        `disconnected (code: ${code})`,
+        `Disconnected (code: ${code}, reason: "${reason}")`,
         Console.Colors.Green
       );
       wsConsole.clear();
@@ -205,16 +210,16 @@ if (program.listen) {
       ws = null;
     });
 
-    ws.on('error', err => {
+    ws.on('error', (err) => {
       wsConsole.print(Console.Types.Error, err.message, Console.Colors.Yellow);
     });
 
-    ws.on('message', data => {
+    ws.on('message', (data) => {
       wsConsole.print(Console.Types.Incoming, data, Console.Colors.Blue);
     });
   });
 
-  wss.on('error', err => {
+  wss.on('error', (err) => {
     wsConsole.print(Console.Types.Error, err.message, Console.Colors.Yellow);
     process.exit(-1);
   });
@@ -243,6 +248,11 @@ if (program.listen) {
     if (program.cert) options.cert = fs.readFileSync(program.cert);
     if (program.key) options.key = fs.readFileSync(program.key);
 
+    if (program.proxy) {
+      var agent = new HttpsProxyAgent(program.proxy);
+      options.agent = agent;
+    }
+
     let connectUrl = program.connect;
     if (!connectUrl.match(/\w+:\/\/.*$/i)) {
       connectUrl = `ws://${connectUrl}`;
@@ -254,17 +264,20 @@ if (program.listen) {
     ws.on('open', () => {
       if (program.execute) {
         ws.send(program.execute);
-        setTimeout(() => {
-          ws.close();
-        }, program.wait ? program.wait * 1000 : 2000);
+        setTimeout(
+          () => {
+            ws.close();
+          },
+          program.wait ? program.wait * 1000 : 2000
+        );
       } else {
         wsConsole.print(
           Console.Types.Control,
-          'connected (press CTRL+C to quit)',
+          'Connected (press CTRL+C to quit)',
           Console.Colors.Green
         );
 
-        wsConsole.on('line', data => {
+        wsConsole.on('line', (data) => {
           if (program.slash && data[0] === '/') {
             const toks = data.split(/\s+/);
             switch (toks[0].substr(1)) {
@@ -305,11 +318,11 @@ if (program.listen) {
       }
     });
 
-    ws.on('close', code => {
+    ws.on('close', (code, reason) => {
       if (!program.execute) {
         wsConsole.print(
           Console.Types.Control,
-          `disconnected (code: ${code})`,
+          `Disconnected (code: ${code}, reason: "${reason}")`,
           Console.Colors.Green
         );
       }
@@ -317,17 +330,17 @@ if (program.listen) {
       process.exit();
     });
 
-    ws.on('error', err => {
+    ws.on('error', (err) => {
       wsConsole.print(Console.Types.Error, err.message, Console.Colors.Yellow);
       process.exit(-1);
     });
 
-    ws.on('message', data => {
+    ws.on('message', (data) => {
       wsConsole.print(Console.Types.Incoming, data, Console.Colors.Blue);
     });
 
     ws.on('ping', () => {
-      if (!program.quiet) {
+      if (program.showPingPong) {
         wsConsole.print(
           Console.Types.Incoming,
           'Received ping',
@@ -337,11 +350,13 @@ if (program.listen) {
     });
 
     ws.on('pong', () => {
-      wsConsole.print(
-        Console.Types.Incoming,
-        'Received pong',
-        Console.Colors.Blue
-      );
+      if (program.showPingPong) {
+        wsConsole.print(
+          Console.Types.Incoming,
+          'Received pong',
+          Console.Colors.Blue
+        );
+      }
     });
 
     wsConsole.on('close', () => {

@@ -1,6 +1,6 @@
 {
   "name": "@softmotions/wscat",
-  "version": "2.2.1",
+  "version": "4.0.1",
   "description": "WebSocket cat",
   "main": "index.js",
   "scripts": {
@@ -18,9 +18,10 @@
   "author": "Arnout Kazemier, Einar Otto Stangvik",
   "license": "MIT",
   "dependencies": {
-    "commander": "~2.19.0",
-    "read": "~1.0.7",
-    "ws": "~6.2.0"
+    "commander": "^5.0.0",
+    "https-proxy-agent": "^5.0.0",
+    "read": "^1.0.7",
+    "ws": "^7.1.2"
   },
   "bin": {
     "wscat": "./bin/wscat"
